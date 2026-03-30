@@ -1,77 +1,338 @@
 <!DOCTYPE html>
 <html>
 <head>
-  <title>Spot — see where your friends are</title>
+  <title>Spot</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
-    body { font-family: sans-serif; background: #f5f5f5; }
+    body { font-family: sans-serif; background: #f5f5f5; color: #1a1a2e; }
+
     #header {
       background: #1a1a2e;
       color: white;
       padding: 16px 20px;
       font-size: 20px;
-      font-weight: 600;
-      letter-spacing: 1px;
+      font-weight: 700;
+      letter-spacing: 2px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
     }
-    #map {
+
+    #header span { font-size: 13px; font-weight: 400; opacity: 0.7; }
+    #logout-btn {
+      background: none;
+      border: 1px solid rgba(255,255,255,0.4);
+      color: white;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 13px;
+    }
+
+    #map { height: calc(100vh - 56px); width: 100%; }
+
+    #auth-screen {
+      display: flex;
+      align-items: center;
+      justify-content: center;
       height: calc(100vh - 56px);
-      width: 100%;
+      background: #f5f5f5;
     }
-    .popup-name {
-      font-weight: 600;
+
+    #auth-box {
+      background: white;
+      border-radius: 12px;
+      padding: 32px;
+      width: 340px;
+      box-shadow: 0 2px 16px rgba(0,0,0,0.08);
+    }
+
+    #auth-box h2 { margin-bottom: 20px; font-size: 20px; }
+
+    #auth-tabs {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 24px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 8px;
+      border: 1px solid #ddd;
+      background: none;
+      border-radius: 6px;
+      cursor: pointer;
       font-size: 14px;
+      color: #888;
     }
-    .popup-message {
-      color: #555;
-      font-size: 13px;
-      margin-top: 2px;
+
+    .tab-btn.active {
+      background: #1a1a2e;
+      color: white;
+      border-color: #1a1a2e;
     }
-    .popup-place {
-      color: #1a1a2e;
-      font-size: 13px;
+
+    input[type="text"], input[type="password"] {
+      width: 100%;
+      padding: 10px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 12px;
+      outline: none;
+    }
+
+    input:focus { border-color: #1a1a2e; }
+
+    #auth-submit {
+      width: 100%;
+      padding: 11px;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      font-size: 15px;
+      cursor: pointer;
       margin-top: 4px;
     }
+
+    #auth-error {
+      color: #c0392b;
+      font-size: 13px;
+      margin-top: 10px;
+      display: none;
+    }
+
+    #checkin-btn {
+      position: absolute;
+      bottom: 32px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      padding: 14px 28px;
+      border-radius: 30px;
+      font-size: 15px;
+      font-weight: 600;
+      cursor: pointer;
+      box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+    }
+
+    #checkin-panel {
+      display: none;
+      position: absolute;
+      bottom: 90px;
+      left: 50%;
+      transform: translateX(-50%);
+      z-index: 1000;
+      background: white;
+      border-radius: 12px;
+      padding: 20px;
+      width: 300px;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+    }
+
+    #checkin-panel input {
+      width: 100%;
+      padding: 9px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 14px;
+      margin-bottom: 10px;
+    }
+
+    #checkin-panel button {
+      width: 100%;
+      padding: 10px;
+      background: #1a1a2e;
+      color: white;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+      font-size: 14px;
+    }
+
+    .popup-name { font-weight: 600; font-size: 14px; }
+    .popup-message { color: #555; font-size: 13px; margin-top: 2px; }
+    .popup-place { color: #1a1a2e; font-size: 13px; margin-top: 4px; }
   </style>
 </head>
 <body>
 
-<div id="header">SPOT</div>
-<div id="map"></div>
+<div id="header">
+  SPOT
+  <div id="header-right" style="display:none">
+    <span id="header-username"></span>
+    <button id="logout-btn" onclick="logout()" style="margin-left:12px">Log out</button>
+  </div>
+</div>
+
+<div id="auth-screen">
+  <div id="auth-box">
+    <h2>Welcome to Spot</h2>
+    <div id="auth-tabs">
+      <button class="tab-btn active" onclick="switchTab('login')">Log in</button>
+      <button class="tab-btn" onclick="switchTab('signup')">Sign up</button>
+    </div>
+    <input type="text" id="auth-username" placeholder="Username"/>
+    <input type="password" id="auth-password" placeholder="Password"/>
+    <button id="auth-submit" onclick="submitAuth()">Log in</button>
+    <div id="auth-error"></div>
+  </div>
+</div>
+
+<div id="map-screen" style="display:none; position:relative">
+  <div id="map"></div>
+  <button id="checkin-btn" onclick="toggleCheckinPanel()">+ Check in here</button>
+  <div id="checkin-panel">
+    <input type="text" id="place-name" placeholder="Place name (e.g. Café Linné)"/>
+    <input type="text" id="place-type" placeholder="Type (cafe, bar, park...)"/>
+    <input type="text" id="checkin-message" placeholder="What are you doing?"/>
+    <button onclick="submitCheckin()">Check in</button>
+  </div>
+</div>
 
 <script>
-  const map = L.map('map').setView([59.3293, 18.0686], 13);
+  let map;
+  let currentTab = 'login';
+  let userLat = 59.3293;
+  let userLng = 18.0686;
 
-  L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-    attribution: '© OpenStreetMap contributors'
-  }).addTo(map);
+  function getToken() { return localStorage.getItem('access_token'); }
+  function getUsername() { return localStorage.getItem('username'); }
 
-  // fetch active checkins from the API
-  fetch('/api/feed/')
+  function showMap() {
+    document.getElementById('auth-screen').style.display = 'none';
+    document.getElementById('map-screen').style.display = 'block';
+    document.getElementById('header-right').style.display = 'flex';
+    document.getElementById('header-username').textContent = getUsername();
+
+    if (!map) {
+      map = L.map('map').setView([userLat, userLng], 14);
+      L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '© OpenStreetMap contributors'
+      }).addTo(map);
+      loadFeed();
+    }
+
+    // try to get real location
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(pos => {
+        userLat = pos.coords.latitude;
+        userLng = pos.coords.longitude;
+        map.setView([userLat, userLng], 15);
+        L.circle([userLat, userLng], { radius: 30, color: '#1a1a2e', fillOpacity: 0.3 }).addTo(map);
+      });
+    }
+  }
+
+  function loadFeed() {
+    fetch('/api/feed/', {
+      headers: { 'Authorization': 'Bearer ' + getToken() }
+    })
     .then(res => res.json())
     .then(checkins => {
-      if (checkins.length === 0) {
-        console.log('No active checkins from friends right now');
-      }
-
-      checkins.forEach(checkin => {
-        const lat = checkin.place.latitude;
-        const lng = checkin.place.longitude;
-        const username = checkin.user.username;
-        const place = checkin.place.name;
-        const message = checkin.message || 'is here';
-
-        const marker = L.marker([lat, lng]).addTo(map);
+      checkins.forEach(c => {
+        const marker = L.marker([c.place.latitude, c.place.longitude]).addTo(map);
         marker.bindPopup(`
-          <div class="popup-name">${username}</div>
-          <div class="popup-message">${message}</div>
-          <div class="popup-place">${place}</div>
+          <div class="popup-name">${c.user.username}</div>
+          <div class="popup-message">${c.message || 'is here'}</div>
+          <div class="popup-place">${c.place.name}</div>
         `);
       });
+    });
+  }
+
+  function switchTab(tab) {
+    currentTab = tab;
+    document.querySelectorAll('.tab-btn').forEach((b, i) => {
+      b.classList.toggle('active', (i === 0 && tab === 'login') || (i === 1 && tab === 'signup'));
+    });
+    document.getElementById('auth-submit').textContent = tab === 'login' ? 'Log in' : 'Sign up';
+    document.getElementById('auth-error').style.display = 'none';
+  }
+
+  function submitAuth() {
+    const username = document.getElementById('auth-username').value;
+    const password = document.getElementById('auth-password').value;
+    const url = currentTab === 'login' ? '/api/login/' : '/api/signup/';
+
+    fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ username, password })
     })
-    .catch(err => console.error('Could not load checkins:', err));
+    .then(res => res.json())
+    .then(data => {
+      if (data.access) {
+        localStorage.setItem('access_token', data.access);
+        localStorage.setItem('refresh_token', data.refresh);
+        localStorage.setItem('username', data.username || username);
+        showMap();
+      } else {
+        const err = document.getElementById('auth-error');
+        err.textContent = data.error || 'Something went wrong';
+        err.style.display = 'block';
+      }
+    });
+  }
+
+  function logout() {
+    localStorage.clear();
+    location.reload();
+  }
+
+  function toggleCheckinPanel() {
+    const panel = document.getElementById('checkin-panel');
+    panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+  }
+
+  function submitCheckin() {
+    const placeName = document.getElementById('place-name').value;
+    const placeType = document.getElementById('place-type').value;
+    const message = document.getElementById('checkin-message').value;
+
+    // first create the place, then check in
+    fetch('/api/places/', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': 'Bearer ' + getToken()
+      },
+      body: JSON.stringify({
+        name: placeName,
+        place_type: placeType,
+        latitude: userLat,
+        longitude: userLng,
+        address: ''
+      })
+    })
+    .then(res => res.json())
+    .then(place => {
+      return fetch('/api/checkins/', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer ' + getToken()
+        },
+        body: JSON.stringify({ place_id: place.id, message })
+      });
+    })
+    .then(res => res.json())
+    .then(() => {
+      document.getElementById('checkin-panel').style.display = 'none';
+      alert('Checked in!');
+      loadFeed();
+    });
+  }
+
+  // check if already logged in
+  if (getToken()) { showMap(); }
 </script>
 
 </body>
