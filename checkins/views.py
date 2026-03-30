@@ -1,3 +1,5 @@
+from django.views import View
+from django.shortcuts import render
 from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
@@ -149,9 +151,9 @@ class LeaderboardView(APIView):
 
         return Response(list(leaderboard))
     
-class MapView(APIView):
-    permission_classes = [permissions.IsAuthenticated]
 
+
+class MapView(View):
     def get(self, request):
         return render(request, 'checkins/map.html')
 class SignupView(APIView):
