@@ -1,3 +1,4 @@
+from rest_framework_simplejwt.tokens import RefreshToken
 from django.shortcuts import render
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
@@ -153,3 +154,31 @@ class MapView(APIView):
 
     def get(self, request):
         return render(request, 'checkins/map.html')
+class SignupView(APIView):
+    permission_classes = [permissions.AllowAny]
+
+    def post(self, request):
+        username = request.data.get('username')
+        password = request.data.get('password')
+
+        if not username or not password:
+            return Response(
+                {'error': 'Username and password are required'},
+                status=400
+            )
+
+        if User.objects.filter(username=username).exists():
+            return Response(
+                {'error': 'Username already taken'},
+                status=400
+            )
+
+        user = User.objects.create_user(username=username, password=password)
+
+        # automatically log them in by returning a token
+        refresh = RefreshToken.for_user(user)
+        return Response({
+            'username': user.username,
+            'access': str(refresh.access_token),
+            'refresh': str(refresh),
+        }, status=201)
