@@ -8,4 +8,5 @@ urlpatterns = [
     path('places/<int:place_id>/active/', views.ActiveAtPlaceView.as_view(), name='active-at-place'),
     path('friends/<int:user_id>/add/', views.AddFriendView.as_view(), name='add-friend'),
     path('leaderboard/', views.LeaderboardView.as_view(), name='leaderboard'),
+    path('map/', views.MapView.as_view(), name='map'),
 ]

@@ -1,3 +1,4 @@
+from django.shortcuts import render
 from rest_framework import generics, permissions, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -146,3 +147,9 @@ class LeaderboardView(APIView):
         )
 
         return Response(list(leaderboard))
+    
+class MapView(APIView):
+    permission_classes = [permissions.IsAuthenticated]
+
+    def get(self, request):
+        return render(request, 'checkins/map.html')
