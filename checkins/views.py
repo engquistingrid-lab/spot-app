@@ -75,12 +75,13 @@ class FeedView(APIView):
     permission_classes = [permissions.IsAuthenticated]
 
     def get(self, request):
-        # get all friend IDs
-        friend_ids = Friendship.objects.filter(
+        friend_ids = list(Friendship.objects.filter(
             from_user=request.user
-        ).values_list('to_user_id', flat=True)
+        ).values_list('to_user_id', flat=True))
+        
+        # include yourself so you can see your own checkins
+        friend_ids.append(request.user.id)
 
-        # get their active checkins (not expired)
         now = timezone.now()
         checkins = Checkin.objects.filter(
             user_id__in=friend_ids,
@@ -89,7 +90,6 @@ class FeedView(APIView):
 
         serializer = CheckinSerializer(checkins, many=True)
         return Response(serializer.data)
-
 
 class ActiveAtPlaceView(APIView):
     permission_classes = [permissions.IsAuthenticated]
