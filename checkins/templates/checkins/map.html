@@ -231,12 +231,20 @@
     }
   }
 
-  function loadFeed() {
+function loadFeed() {
     fetch('/api/feed/', {
       headers: { 'Authorization': 'Bearer ' + getToken() }
     })
-    .then(res => res.json())
+    .then(res => {
+      if (res.status === 401) {
+        // token expired, log out and ask to log in again
+        logout();
+        return [];
+      }
+      return res.json();
+    })
     .then(checkins => {
+      if (!Array.isArray(checkins)) return;
       checkins.forEach(c => {
         const marker = L.marker([c.place.latitude, c.place.longitude]).addTo(map);
         marker.bindPopup(`
@@ -292,17 +300,17 @@
     panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
   }
 
-  function submitCheckin() {
+function submitCheckin() {
     const placeName = document.getElementById('place-name').value;
     const placeType = document.getElementById('place-type').value;
     const message = document.getElementById('checkin-message').value;
+    const token = getToken();
 
-    // first create the place, then check in
     fetch('/api/places/', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': 'Bearer ' + getToken()
+        'Authorization': 'Bearer ' + token
       },
       body: JSON.stringify({
         name: placeName,
@@ -312,19 +320,27 @@
         address: ''
       })
     })
-    .then(res => res.json())
+    .then(res => {
+      if (res.status === 401) { logout(); return null; }
+      return res.json();
+    })
     .then(place => {
+      if (!place) return;
       return fetch('/api/checkins/', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          'Authorization': 'Bearer ' + getToken()
+          'Authorization': 'Bearer ' + token
         },
         body: JSON.stringify({ place_id: place.id, message })
       });
     })
-    .then(res => res.json())
-    .then(() => {
+    .then(res => {
+      if (!res || res.status === 401) { logout(); return; }
+      return res.json();
+    })
+    .then(data => {
+      if (!data) return;
       document.getElementById('checkin-panel').style.display = 'none';
       alert('Checked in!');
       loadFeed();
