@@ -15,5 +15,4 @@ urlpatterns = [
     path('signup/', views.SignupView.as_view(), name='signup'),
     path('login/', TokenObtainPairView.as_view(), name='login'),
     path('token/refresh/', TokenRefreshView.as_view(), name='token-refresh'),
-    path('map/', views.MapView.as_view(), name='map'),
 ]

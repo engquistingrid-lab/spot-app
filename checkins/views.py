@@ -59,6 +59,41 @@ class PlaceListCreateView(generics.ListCreateAPIView):
     serializer_class = PlaceSerializer
     permission_classes = [permissions.IsAuthenticated]
 
+    def create(self, request, *args, **kwargs):
+        """
+        Best-effort de-dupe: if a Place with the same name (and optionally type)
+        already exists very close to the provided coordinates, reuse it.
+        """
+        serializer = self.get_serializer(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        data = serializer.validated_data
+        name = (data.get('name') or '').strip()
+        lat = data.get('latitude')
+        lng = data.get('longitude')
+        place_type = (data.get('place_type') or '').strip()
+
+        # ~50-100m-ish bounding box depending on latitude.
+        delta = 0.0008
+        existing_qs = Place.objects.filter(
+            name__iexact=name,
+            latitude__gte=lat - delta,
+            latitude__lte=lat + delta,
+            longitude__gte=lng - delta,
+            longitude__lte=lng + delta,
+        )
+        if place_type:
+            existing_qs = existing_qs.filter(place_type__iexact=place_type)
+
+        existing = existing_qs.order_by('id').first()
+        if existing:
+            out = self.get_serializer(existing)
+            return Response(out.data, status=status.HTTP_200_OK)
+
+        self.perform_create(serializer)
+        headers = self.get_success_headers(serializer.data)
+        return Response(serializer.data, status=status.HTTP_201_CREATED, headers=headers)
+
 
 class CheckinCreateView(generics.CreateAPIView):
     serializer_class = CheckinSerializer

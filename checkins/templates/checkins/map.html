@@ -194,17 +194,28 @@
     <input type="text" id="place-type" placeholder="Type (cafe, bar, park...)"/>
     <input type="text" id="checkin-message" placeholder="What are you doing?"/>
     <button onclick="submitCheckin()">Check in</button>
+    <div id="checkin-error" style="display:none; margin-top:10px; color:#c0392b; font-size:13px;"></div>
   </div>
 </div>
 
 <script>
   let map;
+  let feedLayer;
   let currentTab = 'login';
   let userLat = 59.3293;
   let userLng = 18.0686;
+  let hasGeolocationFix = false;
 
   function getToken() { return localStorage.getItem('access_token'); }
   function getUsername() { return localStorage.getItem('username'); }
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replaceAll('&', '&amp;')
+      .replaceAll('<', '&lt;')
+      .replaceAll('>', '&gt;')
+      .replaceAll('"', '&quot;')
+      .replaceAll("'", '&#39;');
+  }
 
   function showMap() {
     document.getElementById('auth-screen').style.display = 'none';
@@ -217,6 +228,7 @@
       L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
         attribution: '© OpenStreetMap contributors'
       }).addTo(map);
+      feedLayer = L.layerGroup().addTo(map);
       loadFeed();
     }
 
@@ -225,13 +237,14 @@
       navigator.geolocation.getCurrentPosition(pos => {
         userLat = pos.coords.latitude;
         userLng = pos.coords.longitude;
+        hasGeolocationFix = true;
         map.setView([userLat, userLng], 15);
         L.circle([userLat, userLng], { radius: 30, color: '#1a1a2e', fillOpacity: 0.3 }).addTo(map);
       });
     }
   }
 
-function loadFeed() {
+  function loadFeed({ focusPlaceId = null } = {}) {
     fetch('/api/feed/', {
       headers: { 'Authorization': 'Bearer ' + getToken() }
     })
@@ -245,14 +258,51 @@ function loadFeed() {
     })
     .then(checkins => {
       if (!Array.isArray(checkins)) return;
-      checkins.forEach(c => {
-        const marker = L.marker([c.place.latitude, c.place.longitude]).addTo(map);
+
+      if (feedLayer) feedLayer.clearLayers();
+
+      const groups = new Map();
+      for (const c of checkins) {
+        const place = c?.place;
+        if (!place) continue;
+        const key = place.id ?? `${place.name}|${place.latitude}|${place.longitude}`;
+        if (!groups.has(key)) groups.set(key, { place, checkins: [] });
+        groups.get(key).checkins.push(c);
+      }
+
+      let focusMarker = null;
+      for (const [, group] of groups) {
+        const { place } = group;
+        const lat = Number(place.latitude);
+        const lng = Number(place.longitude);
+        if (!Number.isFinite(lat) || !Number.isFinite(lng)) continue;
+
+        const title = escapeHtml(place.name || 'Unknown place');
+        const lines = group.checkins
+          .map(ci => {
+            const username = escapeHtml(ci?.user?.username || 'Someone');
+            const msg = escapeHtml(ci?.message || 'is here');
+            return `<div class="popup-message"><span style="font-weight:600">${username}</span> ${msg}</div>`;
+          })
+          .join('');
+
+        const marker = L.marker([lat, lng]);
         marker.bindPopup(`
-          <div class="popup-name">${c.user.username}</div>
-          <div class="popup-message">${c.message || 'is here'}</div>
-          <div class="popup-place">${c.place.name}</div>
+          <div class="popup-place">${title}</div>
+          ${lines}
         `);
-      });
+        marker.addTo(feedLayer);
+
+        if (focusPlaceId != null && place.id === focusPlaceId) {
+          focusMarker = marker;
+        }
+      }
+
+      if (focusMarker) {
+        focusMarker.openPopup();
+        const ll = focusMarker.getLatLng();
+        map.setView(ll, Math.max(map.getZoom(), 16), { animate: true });
+      }
     });
   }
 
@@ -300,12 +350,37 @@ function loadFeed() {
     panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
   }
 
+  function showCheckinError(msg) {
+    const el = document.getElementById('checkin-error');
+    el.textContent = msg;
+    el.style.display = 'block';
+  }
+
+  function clearCheckinError() {
+    const el = document.getElementById('checkin-error');
+    el.textContent = '';
+    el.style.display = 'none';
+  }
+
 function submitCheckin() {
+    clearCheckinError();
     const placeName = document.getElementById('place-name').value;
     const placeType = document.getElementById('place-type').value;
     const message = document.getElementById('checkin-message').value;
     const token = getToken();
+    let createdOrFoundPlaceId = null;
 
+    if (!placeName || !placeName.trim()) {
+      showCheckinError('Please enter a place name.');
+      return;
+    }
+
+    if (!hasGeolocationFix) {
+      showCheckinError('Waiting for your location. Please allow location access, then try again.');
+      return;
+    }
+
+    const doSubmit = () => {
     fetch('/api/places/', {
       method: 'POST',
       headers: {
@@ -322,10 +397,16 @@ function submitCheckin() {
     })
     .then(res => {
       if (res.status === 401) { logout(); return null; }
+      if (!res.ok) {
+        return res.json().then(err => {
+          throw new Error(err?.detail || err?.error || 'Could not create place.');
+        });
+      }
       return res.json();
     })
     .then(place => {
       if (!place) return;
+      createdOrFoundPlaceId = place.id;
       return fetch('/api/checkins/', {
         method: 'POST',
         headers: {
@@ -337,14 +418,42 @@ function submitCheckin() {
     })
     .then(res => {
       if (!res || res.status === 401) { logout(); return; }
+      if (!res.ok) {
+        return res.json().then(err => {
+          throw new Error(err?.detail || err?.error || 'Could not check in.');
+        });
+      }
       return res.json();
     })
     .then(data => {
       if (!data) return;
       document.getElementById('checkin-panel').style.display = 'none';
       alert('Checked in!');
-      loadFeed();
+      loadFeed({ focusPlaceId: createdOrFoundPlaceId });
+      document.getElementById('place-name').value = '';
+      document.getElementById('place-type').value = '';
+      document.getElementById('checkin-message').value = '';
+    })
+    .catch(err => {
+      showCheckinError(err?.message || 'Something went wrong.');
     });
+    };
+
+    // Refresh GPS right before submitting (best effort).
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          userLat = pos.coords.latitude;
+          userLng = pos.coords.longitude;
+          hasGeolocationFix = true;
+          doSubmit();
+        },
+        () => doSubmit(),
+        { enableHighAccuracy: true, timeout: 8000, maximumAge: 0 }
+      );
+    } else {
+      doSubmit();
+    }
   }
 
   // check if already logged in
